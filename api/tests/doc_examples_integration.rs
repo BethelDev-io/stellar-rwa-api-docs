@@ -1,6 +1,7 @@
 /// Snapshot test to verify integration guide examples match the documented API contract.
 /// Issue #65: docs: verify example responses on 'Integration' match the live API/contract shapes
 /// Issue #584: verify the runnable worked example on the events endpoint page
+/// Issue #612: verify the runnable worked example on the integration guide page
 use serde_json::{json, Value};
 
 #[test]
@@ -255,8 +256,75 @@ fn test_events_endpoint_curl_example_is_valid() {
     for endpoint in endpoints {
         assert!(
             endpoint.starts_with("/events"),
-            "Endpoint {} documented on events page should target /events",
+            "Endpoint {} documented in events page should target /events",
             endpoint
         );
     }
+}
+
+#[test]
+fn test_integration_guide_worked_example_flow() {
+    // Runnable worked example from docs/app/docs/integration/page.mdx.
+    // The guide walks through: GET /stats -> GET /assets -> GET /assets/1/holders
+    // and shows how to parse the returned asset into a typed value.
+    let stats = json!({
+        "total_assets": 1,
+        "total_holders": 1,
+        "total_dividends_distributed": "0"
+    });
+    assert!(
+        stats["total_assets"].is_number(),
+        "stats.total_assets must be a number"
+    );
+    assert!(
+        stats["total_dividends_distributed"].is_string(),
+        "stats.total_dividends_distributed must be a string (i128)"
+    );
+
+    let assets = json!([
+        {
+            "id": 1,
+            "token_contract": "CBMCWLSQSWUTLUJFCNBHNBSXMUM3XU7NAQ5TSNERW4HA4ZZBYHLG4ECZ",
+            "name": "Manhattan Loft",
+            "symbol": "MLOFT",
+            "asset_type": "real_estate",
+            "valuation_cents": "500000000",
+            "valuation_usd": 5000000.0,
+            "decimals": 2,
+            "total_supply": "1000000",
+            "holders": 1,
+            "active": true,
+            "paused": false,
+            "compliance_contract": "CBUERYDM7DXTZLLKDBRJKUBPFJ7M4OSUN4T7XKUARU345RLXNAIQD2IU"
+        }
+    ]);
+    let asset_list = assets.as_array().expect("assets response must be an array");
+    assert!(!asset_list.is_empty(), "worked example should list at least one asset");
+    let asset = asset_list[0].as_object().unwrap();
+    assert_eq!(asset["id"], json!(1));
+
+    // Display value calculation shown in the guide: total_supply / 10 ** decimals
+    let total_supply: i128 = asset["total_supply"].as_str().unwrap().parse().unwrap();
+    let decimals = asset["decimals"].as_u64().unwrap();
+    let display = total_supply as f64 / 10f64.powi(decimals as i32);
+    assert!((display - 10000.0).abs() < f64::EPSILON, "display value should be 10000.0");
+
+    let holders = json!([
+        {
+            "address": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            "balance": "1000000"
+        }
+    ]);
+    let holder_list = holders.as_array().expect("holders response must be an array");
+    assert!(!holder_list.is_empty(), "worked example should list at least one holder");
+    let holder = holder_list[0].as_object().unwrap();
+    assert!(holder.contains_key("address"), "holder must have address");
+    assert!(
+        holder["balance"].is_string(),
+        "holder balance must be a string (i128)"
+    );
+    assert!(
+        holder["balance"].as_str().unwrap().parse::<i128>().is_ok(),
+        "holder balance should be parseable as i128"
+    );
 }
